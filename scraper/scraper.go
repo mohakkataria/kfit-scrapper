@@ -9,17 +9,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	r "github.com/mohakkataria/kfit-scraper/retriever"
 	"github.com/PuerkitoBio/goquery"
 )
 
 // Partner stores details of a single partner
 type Partner struct {
-	Name       string `json:"name" csv:"name"`
-	City        string `json:"city" csv:"city"`
-	Address 	string `json:"address" csv:"address"`
-	Latitude   float64 `json:"latitude" csv:"latitude"`
-	Longitude float64 `json:"longitude" csv:"longitude"`
-	Rating float64 `json:"rating" csv:"rating"`
+	Name       string `csv:"name"`
+	City        string `csv:"city"`
+	Address 	string `csv:"address"`
+	Latitude   float64 `csv:"latitude"`
+	Longitude float64 `csv:"longitude"`
+	Rating float64 `csv:"rating"`
+	Phone string `csv:"phone"`
 }
 
 // Result stores details of the scraped partners
@@ -35,6 +37,8 @@ type extendedDocument struct {
 var ch chan Partner
 var wg sync.WaitGroup
 
+const host = "https://access.kfit.com"
+
 // Scrape function parses provided URL for product links
 func Scrape(urls []string) Result {
 	ch = make(chan Partner, len(urls))
@@ -43,7 +47,7 @@ func Scrape(urls []string) Result {
 
 	for _, url := range urls {
 		wg.Add(1)
-		go getPartner("https://access.kfit.com"+url)
+		go getPartner(host+url)
 	}
 	wg.Wait()
 	close(ch)
@@ -119,16 +123,22 @@ var getPartner = func(url string) {
 		longitude,_ := strconv.ParseFloat(strings.Trim(strings.TrimSpace(positionCoordinates[1]),"'"), 64)
 		partner.Latitude = latitude
 		partner.Longitude = longitude
-		
-		ch <- partner
 	}
+	
+	if d.Document.Find(".classtable .emptytable").Length() == 0 {
+		if v, exists := d.Document.Find(".classtable .reserve-col .btn").First().Attr("href"); exists {
+			partner.Phone,_ = r.RetrievePartnerPhone(host+v, goquery.NewDocument)
+		}
+	}
+
+	ch <- partner
 	
 }
 
 func (Partner) GetHeaders() []string{
-	return []string{"name", "address", "city", "latitude", "longitude", "rating"}
+	return []string{"name", "address", "city", "latitude", "longitude", "rating", "phone"}
 }
 
 func (p *Partner) GetSerializedData() []string{
-	return []string{p.Name, p.Address, p.City, strconv.FormatFloat(p.Latitude, 'f', 6, 64), strconv.FormatFloat(p.Longitude, 'f', 6, 64), strconv.FormatFloat(p.Rating, 'f', 1, 64)}
+	return []string{p.Name, p.Address, p.City, strconv.FormatFloat(p.Latitude, 'f', 6, 64), strconv.FormatFloat(p.Longitude, 'f', 6, 64), strconv.FormatFloat(p.Rating, 'f', 1, 64), p.Phone}
 }
